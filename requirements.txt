@@ -1,0 +1,4 @@
+fastapi>=0.136
+uvicorn>=0.44
+python-dotenv>=1.0
+a2wsgi>=1.10

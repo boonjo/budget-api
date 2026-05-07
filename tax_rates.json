@@ -1,0 +1,113 @@
+{
+  "_comment": "Federal bracket data and state overrides. Use POST /admin/add-federal-year and POST /admin/add-state-override to update, or run add_tax_year.py locally.",
+  "_bracket_format": "Each bracket is [upper_income_limit, marginal_rate]. null = infinity (top bracket).",
+  "federal_by_year": {
+    "2024": {
+      "_source": "IRS Rev. Proc. 2023-34",
+      "brackets": {
+        "single":             [[11600,0.10],[47150,0.12],[100525,0.22],[191950,0.24],[243725,0.32],[609350,0.35],[null,0.37]],
+        "married_jointly":    [[23200,0.10],[94300,0.12],[201050,0.22],[383900,0.24],[487450,0.32],[731200,0.35],[null,0.37]],
+        "married_separately": [[11600,0.10],[47150,0.12],[100525,0.22],[191950,0.24],[243725,0.32],[365600,0.35],[null,0.37]],
+        "head_of_household":  [[16550,0.10],[63100,0.12],[100500,0.22],[191950,0.24],[243700,0.32],[609350,0.35],[null,0.37]]
+      },
+      "standard_deduction": {
+        "single": 14600, "married_jointly": 29200,
+        "married_separately": 14600, "head_of_household": 21900
+      },
+      "ss_wage_base": 168600
+    },
+    "2025": {
+      "_source": "IRS Rev. Proc. 2024-40",
+      "brackets": {
+        "single":             [[11925,0.10],[48475,0.12],[103350,0.22],[197300,0.24],[250525,0.32],[626350,0.35],[null,0.37]],
+        "married_jointly":    [[23850,0.10],[96950,0.12],[206700,0.22],[394600,0.24],[501050,0.32],[751600,0.35],[null,0.37]],
+        "married_separately": [[11925,0.10],[48475,0.12],[103350,0.22],[197300,0.24],[250525,0.32],[375800,0.35],[null,0.37]],
+        "head_of_household":  [[17000,0.10],[64850,0.12],[103350,0.22],[197300,0.24],[250500,0.32],[626350,0.35],[null,0.37]]
+      },
+      "standard_deduction": {
+        "single": 15000, "married_jointly": 30000,
+        "married_separately": 15000, "head_of_household": 22500
+      },
+      "ss_wage_base": 176100
+    }
+  },
+  "state_overrides_by_year": {
+    "_comment": "State rate changes by year. Each entry overrides the base rate in taxes.py for that year. null brackets = top bracket (no upper limit).",
+    "2025": {
+      "GA": {
+        "name": "Georgia",
+        "type": "flat",
+        "rate": 0.0539,
+        "std_deduction_single": 5400,
+        "std_deduction_married": 7100,
+        "personal_exemption_single": 0,
+        "personal_exemption_married": 0,
+        "notes": "5.39% in 2025; phasing to 4.99% by 2029"
+      },
+      "NC": {
+        "name": "North Carolina",
+        "type": "flat",
+        "rate": 0.0425,
+        "std_deduction_single": 12750,
+        "std_deduction_married": 25500,
+        "personal_exemption_single": 0,
+        "personal_exemption_married": 0,
+        "notes": "4.25% in 2025; phasing to 3.99%"
+      },
+      "MS": {
+        "name": "Mississippi",
+        "type": "flat",
+        "rate": 0.044,
+        "std_deduction_single": 2300,
+        "std_deduction_married": 4600,
+        "personal_exemption_single": 6000,
+        "personal_exemption_married": 12000,
+        "notes": "4.4% in 2025; first $10k exempt; phasing down"
+      },
+      "IN": {
+        "name": "Indiana",
+        "type": "flat",
+        "rate": 0.030,
+        "std_deduction_single": 0,
+        "std_deduction_married": 0,
+        "personal_exemption_single": 1000,
+        "personal_exemption_married": 2000,
+        "notes": "3.0% in 2025; county taxes 0.5-2.9% not included"
+      },
+      "IA": {
+        "name": "Iowa",
+        "type": "flat",
+        "rate": 0.038,
+        "std_deduction_single": 14600,
+        "std_deduction_married": 29200,
+        "personal_exemption_single": 0,
+        "personal_exemption_married": 0,
+        "notes": "3.8% flat starting 2025"
+      },
+      "MO": {
+        "name": "Missouri",
+        "type": "progressive",
+        "rate": 0,
+        "brackets_single": [[1121,0.015],[2242,0.02],[3363,0.025],[4484,0.03],[5605,0.035],[6726,0.04],[7847,0.045],[8968,0.05],[null,0.047]],
+        "brackets_married": [[1121,0.015],[2242,0.02],[3363,0.025],[4484,0.03],[5605,0.035],[6726,0.04],[7847,0.045],[8968,0.05],[null,0.047]],
+        "std_deduction_single": 14600,
+        "std_deduction_married": 29200,
+        "personal_exemption_single": 2100,
+        "personal_exemption_married": 4200,
+        "notes": "Top rate 4.7% in 2025; phasing down"
+      },
+      "SC": {
+        "name": "South Carolina",
+        "type": "progressive",
+        "rate": 0,
+        "brackets_single": [[3460,0.00],[17330,0.03],[null,0.062]],
+        "brackets_married": [[3460,0.00],[17330,0.03],[null,0.062]],
+        "std_deduction_single": 14600,
+        "std_deduction_married": 29200,
+        "personal_exemption_single": 4610,
+        "personal_exemption_married": 9220,
+        "notes": "6.2% top rate in 2025; continuing phase-down"
+      }
+    }
+  }
+}

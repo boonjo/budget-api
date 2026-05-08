@@ -208,6 +208,51 @@ def generate_insights(gross_annual, net_monthly, categories_out, health, age):
             f"You exceed the Fidelity milestone for age {age}. Target was ${health['retirement_target']:,.0f}.",
             "Consider maximizing Roth IRA ($7,000/yr cap) and backdoor Roth if income exceeds direct limits."))
 
+    # ── BEHAVIORAL FINANCE (Ben Felix / evidence-based) ──────────────────────
+
+    # Cash drag: holding far more liquid cash than needed has a real opportunity cost
+    if health and health["months_liquid"] > 12:
+        excess_mo = health["months_liquid"] - 6
+        excess_amt = round(excess_mo * health["monthly_expenses_used"])
+        insights.append(_insight("warning", "🧠", f"{health['months_liquid']:.0f} Months Cash — Opportunity Cost",
+            f"~${excess_amt:,} beyond your 6-month emergency fund is sitting in cash. At historical real equity returns of ~5%, "
+            f"cash drag costs roughly ${round(excess_amt * 0.05):,}/yr in foregone growth.",
+            "Move the excess above 6–9 months into a low-cost, globally diversified index fund (e.g. a total world fund). "
+            "Keep the emergency fund in a high-yield savings account, but don't let the rest idle."))
+
+    # Idle surplus / automation gap: recurring monthly surplus not routed to investments
+    if total_actual > 0:
+        surplus_val = net_monthly - total_actual
+        if surplus_val >= net_monthly * 0.15 and actuals.get("retirement", 0) / gross_mo < 0.10:
+            insights.append(_insight("warning", "🧠", "Recurring Surplus Not Invested",
+                f"${surplus_val:,.0f}/mo ({surplus_val/net_monthly*100:.0f}%) is unallocated each month. "
+                "Behavioral research consistently shows unrouted surplus gets spent, not saved.",
+                "Automate a transfer on payday — treat it like a bill. Even routing half of the surplus to a "
+                "retirement account or taxable brokerage eliminates the decision and the drift."))
+
+    # Present bias: brain underweights future rewards, causing chronic under-saving
+    if age and 35 <= age < 55 and "retirement" in actuals:
+        p = actuals["retirement"] / gross_mo
+        if 0 < p < 0.08:
+            delay_cost = round(actuals["retirement"] * 12 * ((1.07 ** (65 - age) - 1) / 0.07))
+            insights.append(_insight("warning", "🧠", "Present Bias — Delaying Costs More Than It Feels",
+                f"At age {age}, each year you defer a 1% savings increase costs you compounding decades of growth. "
+                f"Your current retirement contributions at the same rate grow to ~${delay_cost:,} by 65 — "
+                "but increasing by just 2% of gross today meaningfully shifts that number.",
+                "Commit to increasing your retirement contribution by 1% with your next paycheck. "
+                "The psychological barrier is larger than the financial one — once automated, you won't notice it."))
+
+    # Lifestyle inflation: spending rises to match income, crowding out savings
+    if total_actual > 0 and gross_annual >= 80_000:
+        savings_rate = actuals.get("retirement", 0) / gross_mo
+        spending_rate = total_actual / net_monthly
+        if spending_rate > 0.90 and savings_rate < 0.10:
+            insights.append(_insight("warning", "🧠", "Lifestyle Inflation Risk",
+                f"You're spending {spending_rate*100:.0f}% of take-home on a ${gross_annual:,.0f} income. "
+                "High earners frequently fail to build wealth not from low income, but because spending scales with earnings.",
+                "Commit to saving at least 50% of each future raise before you adjust to the higher take-home. "
+                "Automate the increase immediately — lifestyle inflation is nearly invisible until it locks you in."))
+
     # ── 401(k) / IRA LIMIT AWARENESS ─────────────────────────────────────────
 
     if "retirement" in actuals:

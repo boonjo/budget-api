@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Budget Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: 'Geist', system-ui, sans-serif; }
+    input:focus, select:focus { outline: none; box-shadow: 0 0 0 3px rgba(113,113,122,.2); }
+
+    /* Insight tier borders */
+    .insight-critical { border-left: 3px solid #dc2626; }
+    .insight-warning  { border-left: 3px solid #f59e0b; }
+    .insight-good     { border-left: 3px solid #22c55e; }
+
+    .fade-in { animation: fadeIn .3s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:#d4d4d8;border-radius:9999px}
+    .dark ::-webkit-scrollbar-thumb{background:#52525b}
+
+    /* Smooth meter fills */
+    .meter-fill { transition: width .8s ease; border-radius:9999px; height:8px; }
+
+    /* Theme toggle transition */
+    html { transition: background-color .2s, color .2s; }
+
+    /* ── Print stylesheet ──────────────────────────────────────────────────── */
+    #print-header { display: none; }
+
+    @media print {
+      /* Strip interactive chrome */
+      #download-btn, #print-btn, #theme-btn, #guide-link,
+      #stale-banner, #empty-state, #loading,
+      aside { display: none !important; }
+
+      /* Unhide print-only header */
+      #print-header { display: block !important; }
+
+      /* Collapse flex layout → single column */
+      body { background: #fff !important; }
+      header { position: static !important; box-shadow: none !important;
+               border-bottom: 1px solid #e2e8f0 !important; }
+      .sticky.top-0 { position: static !important; }
+      .max-w-7xl { max-width: 100% !important; padding: 0 12px !important; }
+      .flex.gap-5.items-start { display: block !important; }
+      main.flex-1 { width: 100% !important; }
+
+      /* Clean up cards for paper */
+      .rounded-2xl { border-radius: 4px !important; }
+      .shadow-sm { box-shadow: none !important; }
+      .bg-white, [class*="dark:bg-"] { background: #fff !important; }
+      [class*="dark:text-"] { color: inherit !important; }
+      [class*="dark:border-"] { border-color: #e2e8f0 !important; }
+
+      /* Page break control */
+      #result-content > div { page-break-inside: avoid; break-inside: avoid;
+                               margin-bottom: 14px; }
+      #result-content > div:first-child { page-break-before: avoid; }
+
+      /* Ensure canvas (chart) prints */
+      canvas { max-width: 120px !important; max-height: 120px !important; }
+
+      /* Typography */
+      body { font-size: 11pt; color: #1e293b; }
+      h2 { font-size: 13pt; }
+    }
+  </style>
+</head>
+<body class="bg-white dark:bg-zinc-950 min-h-screen text-zinc-800 dark:text-zinc-200 transition-colors duration-200">
+
+<!-- ── Print-only header (hidden on screen) ── -->
+<div id="print-header" style="padding:12px 16px;border-bottom:2px solid #18181b;margin-bottom:8px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="font-size:18pt;font-weight:800;color:#1e293b">💰 Budget Planner Report</div>
+      <div id="print-subtitle" style="font-size:9pt;color:#64748b;margin-top:2px"></div>
+    </div>
+    <div style="font-size:8pt;color:#94a3b8;text-align:right">
+      Printed <span id="print-date"></span><br>
+      For informational purposes only
+    </div>
+  </div>
+</div>
+
+<!-- ── Header ── -->
+<header class="bg-white dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800 sticky top-0 z-10">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl">💰</span>
+      <div>
+        <h1 class="font-bold text-zinc-900 dark:text-zinc-100 leading-tight">Budget Planner</h1>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+           Plan your budget based on backed methodologies with federal & state tax calculations
+          <span id="header-year-badge" class="hidden ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"></span>
+        </p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <!-- Guide link -->
+      <a id="guide-link" href="/guide"
+        class="text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors px-2 py-2">
+        How it works
+      </a>
+      <!-- Download report button -->
+      <button id="download-btn" onclick="downloadReport()"
+        class="hidden items-center gap-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300
+               border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2
+               hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        Download
+      </button>
+      <!-- Print button -->
+      <button id="print-btn" onclick="window.print()"
+        class="hidden items-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400
+               border border-zinc-200 dark:border-zinc-600 rounded-xl px-3 py-2
+               hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+        </svg>
+        Print
+      </button>
+      <!-- Dark mode toggle -->
+      <button onclick="toggleTheme()" id="theme-btn"
+        class="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-200 dark:border-zinc-700
+               bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+        title="Toggle dark mode">
+        <svg id="icon-sun" class="w-4 h-4 text-amber-500 hidden" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm0 15a5 5 0 100-10 5 5 0 000 10zm7.07-12.07a1 1 0 010 1.41l-.71.71a1 1 0 11-1.41-1.41l.71-.71a1 1 0 011.41 0zM21 11h1a1 1 0 110 2h-1a1 1 0 110-2zM4.93 19.07a1 1 0 01-1.41-1.41l.71-.71a1 1 0 011.41 1.41l-.71.71zM3 11H2a1 1 0 110 2h1a1 1 0 110-2zm15.36 6.36a1 1 0 01-1.41 0l-.71-.71a1 1 0 111.41-1.41l.71.71a1 1 0 010 1.41zM12 20a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.64 4.93a1 1 0 010 1.41l-.71.71A1 1 0 013.52 5.64l.71-.71a1 1 0 011.41 0z"/>
+        </svg>
+        <svg id="icon-moon" class="w-4 h-4 text-zinc-500 dark:text-zinc-300" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ── Stale rates banner ── -->
+<div id="stale-banner" class="hidden bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 px-4 py-2">
+  <p class="max-w-7xl mx-auto text-xs text-amber-700 dark:text-amber-300 text-center" id="stale-banner-text"></p>
+</div>
+
+<div class="max-w-7xl mx-auto px-4 py-6 flex gap-5 items-start">
+
+  <!-- ── Sidebar ── -->
+  <aside class="w-72 shrink-0 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+    <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5 space-y-4">
+      <h2 class="font-semibold text-zinc-500 dark:text-zinc-400 text-xs uppercase tracking-wider">Your Profile</h2>
+
+      <div>
+        <label class="block text-sm font-medium text-zinc-600 dark:text-zinc-300 mb-1">Annual Gross Income</label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span>
+          <input id="gross" type="number" min="1" placeholder="75,000"
+            class="w-full border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800
+                   dark:text-zinc-100 dark:placeholder-zinc-500
+                   rounded-xl pl-7 pr-3 py-2 text-sm focus:border-zinc-400" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-300 mb-1">State</label>
+          <select id="state"
+            class="w-full border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800
+                   dark:text-zinc-100 rounded-xl px-2 py-2 text-xs focus:border-zinc-400">
+            <option value="">Loading…</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-300 mb-1">Age <span class="text-zinc-400 font-normal">(opt.)</span></label>
+          <input id="age" type="number" min="16" max="100" placeholder="e.g. 32"
+            class="w-full border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800
+                   dark:text-zinc-100 dark:placeholder-zinc-500
+                   rounded-xl px-3 py-2 text-xs focus:border-zinc-400" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-zinc-600 dark:text-zinc-300 mb-1">Filing Status</label>
+        <select id="filing"
+          class="w-full border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800
+                 dark:text-zinc-100 rounded-xl px-3 py-2 text-sm focus:border-zinc-400">
+          <option value="single">Single</option>
+          <option value="married_jointly">Married Filing Jointly</option>
+          <option value="married_separately">Married Filing Separately</option>
+          <option value="head_of_household">Head of Household</option>
+        </select>
+      </div>
+
+      <!-- Pre-tax Contributions -->
+      <details id="details-pretax" class="group">
+        <summary class="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-300 select-none flex items-center gap-1.5 min-w-0">
+          <span class="group-open:rotate-90 transition-transform inline-block text-xs shrink-0">▶</span>
+          <span class="truncate">Pre-tax deductions <span class="text-xs text-zinc-400 font-normal whitespace-nowrap">(401k, HSA, FSA)</span></span>
+        </summary>
+        <div class="mt-3">
+          <div class="relative">
+            <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">$</span>
+            <input id="pretax" type="number" min="0" placeholder="e.g. 23500"
+              class="w-full border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800
+                     dark:text-zinc-100 dark:placeholder-zinc-500
+                     rounded-lg pl-6 pr-2 py-1.5 text-xs focus:border-zinc-400" />
+          </div>
+          <p class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1.5">Annual total. Reduces your taxable income — use W-2 Box 12 or your plan statement.</p>
+        </div>
+      </details>
+
+      <!-- Account Balances -->
+      <details id="details-balances" class="group">
+        <summary class="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-300 select-none flex items-center gap-1.5">
+          <span class="group-open:rotate-90 transition-transform inline-block text-xs">▶</span>
+          Account balances
+          <span class="text-xs text-zinc-400 font-normal">(health check)</span>
+        </summary>
+        <div class="mt-3 space-y-2">
+          <div>
+            <label class="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5">Checking</label>
+            <div class="relative"><span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">$</span>
+              <input id="bal-checking" type="number" min="0" placeholder="0"
+                class="w-full border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 rounded-lg pl-6 pr-2 py-1.5 text-xs focus:border-zinc-400" /></div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5">Savings / HYSA</label>
+            <div class="relative"><span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">$</span>
+              <input id="bal-savings" type="number" min="0" placeholder="0"
+                class="w-full border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 rounded-lg pl-6 pr-2 py-1.5 text-xs focus:border-zinc-400" /></div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-0.5">Retirement (401k/IRA)</label>
+            <div class="relative"><span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">$</span>
+              <input id="bal-retirement" type="number" min="0" placeholder="0"
+                class="w-full border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 rounded-lg pl-6 pr-2 py-1.5 text-xs focus:border-zinc-400" /></div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Current Spending -->
+      <details id="details-actuals" class="group">
+        <summary class="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-300 select-none flex items-center gap-1.5">
+          <span class="group-open:rotate-90 transition-transform inline-block text-xs">▶</span>
+          Current spending
+          <span class="text-xs text-zinc-400 font-normal">($/mo actual)</span>
+        </summary>
+        <div id="actuals-form" class="mt-3 space-y-1.5"></div>
+      </details>
+
+      <div class="flex gap-2">
+        <button id="calc-btn" onclick="calculate()"
+          class="flex-1 bg-zinc-900 hover:bg-zinc-700 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 active:scale-95 text-white font-semibold rounded-xl py-2.5 text-sm transition-all">
+          Calculate
+        </button>
+        <button id="reset-btn" onclick="resetForm()" title="Clear all inputs"
+          class="shrink-0 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800
+                 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-400 dark:text-zinc-500
+                 hover:text-red-500 dark:hover:text-red-400 rounded-xl px-3 text-sm transition-all active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </div>
+      <p id="form-error" class="text-red-500 dark:text-red-400 text-xs hidden"></p>
+    </div>
+  </aside>
+
+  <!-- ── Results area ── -->
+  <main class="flex-1 min-w-0 space-y-4">
+    <div id="empty-state" class="flex flex-col items-center justify-center py-24 text-zinc-400 dark:text-zinc-500">
+      <span class="text-5xl mb-4">📊</span>
+      <p class="font-medium">Enter your details and click Calculate</p>
+      <p class="text-sm mt-1">Federal + state taxes · Spending guidance · Account health check</p>
+    </div>
+    <div id="loading" class="hidden flex items-center justify-center py-24 text-zinc-400 dark:text-zinc-500 gap-3">
+      <svg class="animate-spin h-6 w-6 text-zinc-400" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+      </svg>
+      <span class="text-sm">Calculating…</span>
+    </div>
+    <div id="result-content" class="hidden space-y-4 fade-in"></div>
+  </main>
+</div>
+
+
+<script>
+// ── Print: strip dark mode before printing, restore after ────────────────────
+window.addEventListener('beforeprint', () => {
+  document.documentElement.classList.add('printing');
+  document.documentElement.classList.remove('dark');
+});
+window.addEventListener('afterprint', () => {
+  document.documentElement.classList.remove('printing');
+  const saved = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (saved ? saved === 'dark' : prefersDark) {
+    document.documentElement.classList.add('dark');
+  }
+});
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function applyTheme(dark) {
+  document.documentElement.classList.toggle('dark', dark);
+  document.getElementById('icon-sun').classList.toggle('hidden', !dark);
+  document.getElementById('icon-moon').classList.toggle('hidden', dark);
+}
+function toggleTheme() {
+  const isDark = document.documentElement.classList.contains('dark');
+  applyTheme(!isDark);
+  localStorage.setItem('theme', isDark ? 'light' : 'dark');
+  if (taxChart && lastResult) {
+    taxChart.destroy();
+    taxChart = null;
+    requestAnimationFrame(() => renderTaxChart(lastResult.taxes));
+  }
+  if (fwChart && lastResult) {
+    fwChart.destroy();
+    fwChart = null;
+    requestAnimationFrame(() => renderFrameworkChart(lastResult));
+  }
+}
+// Init theme from preference
+(function() {
+  const saved = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved ? saved === 'dark' : prefersDark);
+})();
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let lastResult = null;
+let taxChart   = null;
+let fwChart    = null;
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+async function loadStates() {
+  try {
+    const res = await fetch('/api/states');
+    if (!res.ok) throw new Error('Server error');
+    const states = await res.json();
+    const sel    = document.getElementById('state');
+    sel.innerHTML = '<option value="">Select state…</option>' +
+      states.map(s => `<option value="${s.code}">${s.name}</option>`).join('');
+    buildActualsForm();
+    restoreFormState();
+  } catch (_) {
+    document.getElementById('state').innerHTML = '<option value="">⚠ Could not load — refresh</option>';
+    showError('Could not reach the server. Please refresh the page.');
+  }
+}
+
+// [input-key, label, submit-key]  — groceries+dining_out both submit as 'food'
+const CATEGORY_LABELS = [
+  ['housing',        'Housing (rent/mortgage)',     'housing'],
+  ['transportation', 'Transportation',              'transportation'],
+  ['groceries',      'Groceries',                   'food'],
+  ['dining_out',     'Dining Out',                  'food'],
+  ['healthcare',     'Healthcare',                  'healthcare'],
+  ['utilities',      'Utilities & Subscriptions',   'utilities'],
+  ['insurance',      'Life & Disability Insurance', 'insurance'],
+  ['retirement',     'Retirement Savings',          'retirement'],
+  ['emergency_fund', 'Emergency Fund Building',     'emergency_fund'],
+  ['debt',           'Debt Repayment',              'debt'],
+  ['personal',       'Personal Care & Clothing',    'personal'],
+  ['entertainment',  'Entertainment & Fun',         'entertainment'],
+  ['giving',         'Giving & Charity',            'giving'],
+];
+
+function buildActualsForm() {
+  const form = document.getElementById('actuals-form');
+  form.innerHTML = CATEGORY_LABELS.map(([key, label, submitKey]) => `
+    <label class="block">
+      <span class="text-zinc-500 dark:text-zinc-400 text-xs">${label}</span>
+      <div class="relative mt-0.5">
+        <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">$</span>
+        <input type="number" min="0" data-key="${key}" data-submit-key="${submitKey}" placeholder="0/mo"
+          class="actual-input w-full border border-zinc-200 dark:border-zinc-600
+                 bg-white dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500
+                 rounded-lg pl-6 pr-2 py-1.5 text-xs focus:border-zinc-400" />
+      </div>
+    </label>`).join('');
+
+  form.insertAdjacentHTML('beforeend', `
+    <div class="pt-2 border-t border-zinc-100 dark:border-zinc-700 flex justify-between items-center text-xs">
+      <span class="text-zinc-400 dark:text-zinc-500">Total entered / mo</span>
+      <span id="actuals-total" class="font-semibold text-zinc-500 dark:text-zinc-400">$0</span>
+    </div>`);
+
+  form.querySelectorAll('.actual-input').forEach(inp => {
+    inp.addEventListener('input', updateActualsTotal);
+  });
+}
+
+function updateActualsTotal() {
+  let total = 0;
+  document.querySelectorAll('.actual-input').forEach(inp => {
+    total += parseFloat(inp.value) || 0;
+  });
+  const el = document.getElementById('actuals-total');
+  if (!el) return;
+  el.textContent = '$' + Math.round(total).toLocaleString() + '/mo';
+  if (lastResult) {
+    const net = lastResult.taxes.net_monthly;
+    el.className = total > net
+      ? 'font-semibold text-red-500 dark:text-red-400'
+      : total > net * 0.90
+      ? 'font-semibold text-amber-500 dark:text-amber-400'
+      : 'font-semibold text-emerald-600 dark:text-emerald-400';
+  }
+}
+
+// ── Calculate ─────────────────────────────────────────────────────────────────
+// Only fire on Enter from the main profile inputs, not from within the spending fields
+['gross', 'state', 'age', 'filing', 'pretax'].forEach(id => {
+  document.getElementById(id)?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') calculate();
+  });
+});
+
+async function calculate() {
+  document.getElementById('form-error').classList.add('hidden');
+
+  const gross  = parseFloat(document.getElementById('gross').value);
+  const state  = document.getElementById('state').value;
+  const filing = document.getElementById('filing').value;
+  const age    = document.getElementById('age').value ? parseInt(document.getElementById('age').value) : null;
+
+  if (!gross || gross <= 0) { showError('Enter a valid gross income.'); return; }
+  if (!state)               { showError('Select a state.'); return; }
+  if (!filing)              { showError('Select a filing status.'); return; }
+
+  const pretax = parseFloat(document.getElementById('pretax').value) || null;
+
+  const actuals = {};
+  document.querySelectorAll('.actual-input').forEach(inp => {
+    const v = parseFloat(inp.value);
+    if (v > 0) {
+      const key = inp.dataset.submitKey || inp.dataset.key;
+      actuals[key] = (actuals[key] || 0) + v;
+    }
+  });
+
+  const checking   = parseFloat(document.getElementById('bal-checking').value)  || null;
+  const savings    = parseFloat(document.getElementById('bal-savings').value)    || null;
+  const retirement = parseFloat(document.getElementById('bal-retirement').value) || null;
+
+  document.getElementById('empty-state').classList.add('hidden');
+  document.getElementById('loading').classList.remove('hidden');
+  document.getElementById('result-content').classList.add('hidden');
+  document.getElementById('stale-banner').classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/calculate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        gross_annual:   gross,
+        pretax_contrib: pretax,
+        filing_status:  filing,
+        state, age,
+        actuals:  Object.keys(actuals).length ? actuals : null,
+        balances: (checking || savings || retirement) ? {checking, savings, retirement} : null,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    lastResult = await res.json();
+    renderResults(lastResult);
+  } catch(e) {
+    showError('Calculation failed: ' + e.message);
+  } finally {
+    document.getElementById('loading').classList.add('hidden');
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('form-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  document.getElementById('loading').classList.add('hidden');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmt(n)    { return (n < 0 ? '-$' : '$') + Math.round(Math.abs(n)).toLocaleString(); }
+function fmtPct(n) { return (n * 100).toFixed(1) + '%'; }
+function fmtRate(n){ return (n * 100).toFixed(2) + '%'; }
+
+// ── Render all ────────────────────────────────────────────────────────────────
+function renderResults(d) {
+  const el = document.getElementById('result-content');
+  el.innerHTML = '';
+  if (taxChart) { taxChart.destroy(); taxChart = null; }
+  if (fwChart)  { fwChart.destroy();  fwChart  = null; }
+
+  // Tax year badge + stale warning
+  const year = d.taxes.tax_year;
+  const badge = document.getElementById('header-year-badge');
+  badge.textContent = `${year} rates`;
+  badge.classList.remove('hidden');
+
+  if (!d.taxes.rates_current) {
+    const banner = document.getElementById('stale-banner');
+    document.getElementById('stale-banner-text').textContent =
+      `ℹ️  Showing ${year} rates — the most recent available. ` +
+      `${new Date().getFullYear()} brackets haven't been added yet; figures are a close estimate.`;
+    banner.classList.remove('hidden');
+  }
+
+  el.appendChild(renderTaxCard(d));
+  if (d.health)           el.appendChild(renderHealthCard(d.health));
+  if (d.ss_estimate)      el.appendChild(renderSSCard(d.ss_estimate, d.taxes));
+  if (d.insights?.length) el.appendChild(renderInsightsCard(d.insights));
+  el.appendChild(renderCategoryCard(d));
+  el.appendChild(renderFrameworkCard(d));
+  el.appendChild(renderMilestoneCard(d));
+
+  el.classList.remove('hidden');
+  document.getElementById('download-btn').classList.remove('hidden');
+  document.getElementById('download-btn').classList.add('flex');
+  document.getElementById('print-btn').classList.remove('hidden');
+  document.getElementById('print-btn').classList.add('flex');
+
+  // Update print header with current inputs
+  const stateEl  = document.getElementById('state');
+  const stateName = stateEl.options[stateEl.selectedIndex]?.text || '';
+  const gross = parseFloat(document.getElementById('gross').value);
+  document.getElementById('print-date').textContent =
+    new Date().toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'});
+  document.getElementById('print-subtitle').textContent =
+    `${fmt(gross)} gross · ${stateName} · ${d.taxes.tax_year} tax rates`;
+
+  requestAnimationFrame(() => renderTaxChart(d.taxes));
+}
+
+// ── Card shell (dark-aware) ───────────────────────────────────────────────────
+function card() {
+  const d = document.createElement('div');
+  d.className = 'bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-6';
+  return d;
+}
+
+function sectionTitle(text) {
+  return `<h2 class="font-semibold text-zinc-800 dark:text-zinc-100 mb-4 text-sm">${text}</h2>`;
+}
+
+// ── Tax card ──────────────────────────────────────────────────────────────────
+function renderTaxCard(d) {
+  const t   = d.taxes;
+  const div = card();
+  const stateNote = t.state.notes
+    ? `<p class="text-xs text-zinc-400 dark:text-zinc-500 mt-2 italic">${t.state.notes}</p>` : '';
+
+  div.innerHTML = `
+    ${sectionTitle(`Tax Breakdown · ${t.state.name || ''} · ${t.tax_year}`)}
+    <div class="flex gap-5 flex-wrap items-start">
+      <div class="flex flex-col items-center shrink-0">
+        <canvas id="tax-chart" width="140" height="140"></canvas>
+        <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 justify-center text-[10px]">
+          ${[['#4ade80','Net'],['#f87171','Federal'],['#fb923c','FICA'],['#a78bfa','State']]
+            .map(([c,l])=>`<span class="flex items-center gap-1"><span style="background:${c}" class="w-2 h-2 rounded-full inline-block"></span>${l}</span>`)
+            .join('')}
+        </div>
+      </div>
+      <div class="flex-1 min-w-44 space-y-2">
+        ${taxRow('Gross Income',       t.gross,                                 'text-zinc-700 dark:text-zinc-200 font-semibold', true)}
+        ${t.pretax_contrib > 0 ? taxRow('Pre-tax Deductions', -t.pretax_contrib, 'text-zinc-500 dark:text-zinc-400') : ''}
+        ${taxRow('Federal Income Tax', t.federal.tax,                           'text-red-500')}
+        ${taxRow('Social Security',    t.fica.social_security,                  'text-orange-500')}
+        ${taxRow('Medicare',           t.fica.medicare + t.fica.additional_medicare, 'text-orange-400')}
+        ${taxRow('State Income Tax',   t.state.tax,                             'text-purple-500 dark:text-purple-400')}
+        <div class="border-t border-zinc-100 dark:border-zinc-700"></div>
+        ${taxRow('Total Taxes',        t.total_tax,                             'text-red-600 dark:text-red-400 font-semibold')}
+        ${taxRow('Net Annual',         t.net_annual,                            'text-green-600 dark:text-green-400 font-bold', true)}
+        ${taxRow('Net Monthly',        t.net_monthly,                           'text-green-500 dark:text-green-400 font-semibold')}
+      </div>
+      <div class="space-y-2 text-xs shrink-0 min-w-36">
+        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 space-y-1 text-zinc-600 dark:text-zinc-300">
+          <p class="font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide text-[10px]">Effective Rates</p>
+          <p>Overall: <strong class="text-zinc-800 dark:text-zinc-100">${fmtRate(t.effective_rate)}</strong></p>
+          <p>Federal: ${fmtRate(t.federal.effective_rate)} · Marginal: ${fmtRate(t.federal.marginal_rate)}</p>
+          <p>State: ${fmtRate(t.state.effective_rate)} · Marginal: ${fmtRate(t.state.marginal_rate)}</p>
+        </div>
+        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 space-y-1 text-xs text-zinc-700 dark:text-zinc-300">
+          <p class="font-semibold text-[10px] uppercase tracking-wide">Federal Deduction</p>
+          <p>Std. deduction: <strong>${fmt(t.federal.standard_deduction)}</strong></p>
+          <p>Taxable income: <strong>${fmt(t.federal.taxable_income)}</strong></p>
+        </div>
+        ${stateNote}
+      </div>
+    </div>
+    <div class="mt-4 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
+      <p class="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">Raise / Bonus Estimator</p>
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs text-zinc-500 dark:text-zinc-400">If I earn an extra</span>
+        <div class="relative">
+          <span class="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">$</span>
+          <input id="raise-input" type="number" min="0" placeholder="5,000"
+            class="w-28 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700
+                   dark:text-zinc-100 rounded-lg pl-5 pr-2 py-1 text-xs focus:border-zinc-400"
+            oninput="updateRaiseEstimate()" />
+        </div>
+        <span class="text-xs text-zinc-500 dark:text-zinc-400">this year → I keep</span>
+        <span id="raise-keep" class="font-bold text-green-600 dark:text-green-400 text-sm">—</span>
+      </div>
+      <p class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1.5">
+        Marginal rate: Fed ${fmtRate(t.federal.marginal_rate)} + State ${fmtRate(t.state.marginal_rate)} + FICA 7.65% = <strong class="text-zinc-600 dark:text-zinc-300">${fmtRate(t.federal.marginal_rate + t.state.marginal_rate + 0.0765)}</strong> combined
+      </p>
+    </div>`;
+  return div;
+}
+
+function taxRow(label, amount, colorClass, large=false) {
+  const sz = large ? 'text-sm' : 'text-xs';
+  return `<div class="flex justify-between items-center gap-4 ${sz}">
+    <span class="text-zinc-500 dark:text-zinc-400">${label}</span>
+    <span class="${colorClass}">${fmt(amount)}</span>
+  </div>`;
+}
+
+function renderTaxChart(t) {
+  const ctx = document.getElementById('tax-chart');
+  if (!ctx) return;
+  const isDark = document.documentElement.classList.contains('dark');
+  taxChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Net Take-Home','Federal Tax','FICA','State Tax'],
+      datasets: [{
+        data: [t.net_annual, t.federal.tax, t.fica.total, t.state.tax],
+        backgroundColor: ['#4ade80','#f87171','#fb923c','#a78bfa'],
+        borderWidth: 2,
+        borderColor: isDark ? '#0f172a' : '#ffffff',
+      }],
+    },
+    options: {
+      cutout: '72%',
+      plugins: {
+        legend: {display: false},
+        tooltip: { callbacks: { label: c => ` ${fmt(c.parsed)} (${fmtPct(c.parsed/t.gross)})` } }
+      }
+    }
+  });
+}
+
+function updateRaiseEstimate() {
+  if (!lastResult) return;
+  const t    = lastResult.taxes;
+  const raise = parseFloat(document.getElementById('raise-input')?.value) || 0;
+  const marg  = t.federal.marginal_rate + t.state.marginal_rate + 0.0765;
+  const net   = raise * (1 - marg);
+  const el    = document.getElementById('raise-keep');
+  if (el) el.textContent = raise > 0 ? `${fmt(net)}/yr (${fmt(net / 12)}/mo)` : '—';
+}
+
+function renderSSCard(ss, t) {
+  const div = card();
+  div.innerHTML = `
+    ${sectionTitle('Social Security Estimate')}
+    <p class="text-[10px] text-zinc-400 dark:text-zinc-500 -mt-3 mb-4">
+      Simplified estimate using 2024 SSA bend points, assuming stable career earnings of ${fmt(t.gross)}/yr.
+      Verify at <a href="https://www.ssa.gov/myaccount/" target="_blank" rel="noopener noreferrer"
+        class="text-zinc-500 hover:underline">ssa.gov/myaccount</a>.
+    </p>
+    <div class="grid grid-cols-3 gap-3">
+      <div class="bg-amber-50 dark:bg-amber-950/40 rounded-xl p-4 text-center border border-amber-100 dark:border-amber-900/50">
+        <p class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wide mb-2">Claim at 62</p>
+        <p class="font-bold text-xl text-amber-600 dark:text-amber-400">${fmt(ss.at_62)}</p>
+        <p class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">per month</p>
+        <p class="text-[10px] text-amber-500/80 dark:text-amber-400/70 mt-2">−30% vs. FRA</p>
+      </div>
+      <div class="bg-zinc-50 dark:bg-zinc-800/60 rounded-xl p-4 text-center border border-zinc-200 dark:border-zinc-700 ring-2 ring-zinc-300 dark:ring-zinc-600">
+        <p class="text-[10px] text-zinc-700 dark:text-zinc-300 font-semibold uppercase tracking-wide mb-2">Full Ret. Age · 67</p>
+        <p class="font-bold text-2xl text-zinc-900 dark:text-zinc-50">${fmt(ss.at_67)}</p>
+        <p class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">per month</p>
+        <p class="text-[10px] text-zinc-500 dark:text-zinc-400 mt-2">${fmt(ss.annual_at_67)}/yr</p>
+      </div>
+      <div class="bg-emerald-50 dark:bg-emerald-950/40 rounded-xl p-4 text-center border border-emerald-100 dark:border-emerald-900/50">
+        <p class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wide mb-2">Delay to 70</p>
+        <p class="font-bold text-xl text-emerald-600 dark:text-emerald-400">${fmt(ss.at_70)}</p>
+        <p class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">per month</p>
+        <p class="text-[10px] text-emerald-500/80 dark:text-emerald-400/70 mt-2">+24% vs. FRA</p>
+      </div>
+    </div>
+    ${ss.years_to_fra != null ? `
+    <p class="text-xs text-center text-zinc-500 dark:text-zinc-400 mt-3">
+      <strong>${ss.years_to_fra}</strong> year${ss.years_to_fra !== 1 ? 's' : ''} until Full Retirement Age (67)
+    </p>` : ''}`;
+  return div;
+}
+
+// ── Health card ───────────────────────────────────────────────────────────────
+function renderHealthCard(h) {
+  const div = card();
+  const moPct   = Math.min(100, (h.months_liquid / 6) * 100);
+  const moColor = h.months_liquid < 1 ? 'bg-red-400' : h.months_liquid < 3 ? 'bg-amber-400' : 'bg-emerald-400';
+
+  let retHtml = '';
+  if (h.retirement_target !== null) {
+    const retPct  = Math.min(100, (h.retirement_balance / h.retirement_target) * 100);
+    const retColor = retPct < 50 ? 'bg-red-400' : retPct < 90 ? 'bg-amber-400' : 'bg-emerald-400';
+    const gap = h.retirement_gap;
+    const ageLabel = h.retirement_milestone_age ? ` (age ${h.retirement_milestone_age} target)` : '';
+    const gapLabel = gap >= 0
+      ? `<span class="text-emerald-600 dark:text-emerald-400 font-semibold">+${fmt(gap)} ahead</span>`
+      : `<span class="text-red-500 dark:text-red-400 font-semibold">${fmt(Math.abs(gap))} behind</span>`;
+    retHtml = `
+      <div class="border-t border-zinc-100 dark:border-zinc-700 pt-3 mt-1">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-zinc-500 dark:text-zinc-400">Retirement vs Fidelity Milestone${ageLabel}</span>
+          ${gapLabel}
+        </div>
+        <div class="bg-zinc-200 dark:bg-zinc-700 rounded-full h-2">
+          <div class="meter-fill ${retColor}" style="width:${retPct}%"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+          <span>${fmt(h.retirement_balance)} saved</span>
+          <span>Target ${fmt(h.retirement_target)}</span>
+        </div>
+      </div>`;
+  }
+
+  div.innerHTML = `
+    ${sectionTitle('Account Health Check')}
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      ${hStat('Checking',       h.checking,            'text-zinc-700 dark:text-zinc-200')}
+      ${hStat('Savings / HYSA', h.savings,             'text-blue-600 dark:text-blue-400')}
+      ${hStat('Retirement',     h.retirement_balance,  'text-purple-600 dark:text-purple-400')}
+    </div>
+    <div class="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-4 space-y-3">
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-zinc-500 dark:text-zinc-400 font-medium">Liquid Emergency Coverage</span>
+          <span class="font-bold text-zinc-700 dark:text-zinc-200">${h.months_liquid.toFixed(1)} / 6 months</span>
+        </div>
+        <div class="bg-zinc-200 dark:bg-zinc-700 rounded-full h-2">
+          <div class="meter-fill ${moColor}" style="width:${moPct}%"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+          <span>${fmt(h.liquid_total)} liquid</span>
+          <span>6-mo goal: ${fmt(h.monthly_expenses_used * 6)}</span>
+        </div>
+      </div>
+      <div class="flex justify-between text-sm pt-1 border-t border-zinc-200 dark:border-zinc-700">
+        <span class="text-zinc-500 dark:text-zinc-400">Est. Net Worth (excl. debt)</span>
+        <span class="font-bold text-zinc-800 dark:text-zinc-100">${fmt(h.net_worth_estimate)}</span>
+      </div>
+      ${retHtml}
+    </div>`;
+  return div;
+}
+
+function hStat(label, value, color) {
+  const display = value > 0 ? fmt(value) : '—';
+  const cls     = value > 0 ? color : 'text-zinc-400 dark:text-zinc-500';
+  return `<div class="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 text-center">
+    <p class="text-[10px] text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-1">${label}</p>
+    <p class="font-bold text-sm ${cls}">${display}</p>
+  </div>`;
+}
+
+// ── Insights card ─────────────────────────────────────────────────────────────
+const TIER_META = {
+  critical: { label: 'Critical',  badge: 'bg-red-100   dark:bg-red-900/50  text-red-700   dark:text-red-300'  },
+  warning:  { label: 'Warning',   badge: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'},
+  good:     { label: 'On Track',  badge: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'},
+};
+const TIER_CARD_BG = {
+  critical: 'bg-red-50   dark:bg-red-950/40',
+  warning:  'bg-amber-50 dark:bg-amber-950/30',
+  good:     'bg-green-50 dark:bg-green-950/30',
+};
+
+function renderInsightsCard(insights) {
+  const div = card();
+  const counts = {critical:0, warning:0, good:0};
+  insights.forEach(i => counts[i.tier] !== undefined && counts[i.tier]++);
+
+  const summary = Object.entries(counts)
+    .filter(([,n]) => n > 0)
+    .map(([tier, n]) => {
+      const m = TIER_META[tier];
+      return `<span class="inline-flex items-center text-xs px-2 py-0.5 rounded-full ${m.badge} font-medium">${n} ${m.label}</span>`;
+    }).join('');
+
+  const items = insights.map(ins => {
+    const m  = TIER_META[ins.tier] || TIER_META.good;
+    const bg = TIER_CARD_BG[ins.tier] || TIER_CARD_BG.good;
+    return `
+      <div class="insight-${ins.tier} ${bg} rounded-xl p-3.5 space-y-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-base">${ins.icon}</span>
+          <span class="text-xs font-semibold px-1.5 py-0.5 rounded-full ${m.badge}">${m.label}</span>
+          <span class="font-semibold text-sm text-zinc-800 dark:text-zinc-100">${ins.title}</span>
+        </div>
+        <p class="text-xs text-zinc-600 dark:text-zinc-300 ml-7">${ins.body}</p>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400 ml-7">
+          <span class="font-medium text-zinc-700 dark:text-zinc-200">→ Action:</span> ${ins.action}
+        </p>
+      </div>`;
+  }).join('');
+
+  div.innerHTML = `
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      ${sectionTitle('Actionable Insights').replace('mb-4','')}
+      <div class="flex gap-1.5 flex-wrap mb-4">${summary}</div>
+    </div>
+    <div class="space-y-2">${items}</div>`;
+  return div;
+}
+
+// ── Category card ─────────────────────────────────────────────────────────────
+const BUCKET_PILL = {
+  needs:   '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">Need</span>',
+  wants:   '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">Want</span>',
+  savings: '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300">Save</span>',
+};
+const STATUS_CLS = {ok:'text-green-600 dark:text-green-400', over:'text-red-500 dark:text-red-400', under:'text-blue-600 dark:text-blue-400'};
+const STATUS_ICON = {ok:'✓', over:'↑', under:'↓'};
+
+function renderCategoryCard(d) {
+  const div = card();
+  const rows = d.categories.map(cat => {
+    const barPct = Math.min(100, cat.pct_max * 100 / 0.35);
+    const actualHtml = cat.actual != null ? `
+      <span class="text-[10px] ${STATUS_CLS[cat.status]||''} font-medium ml-1">
+        ${STATUS_ICON[cat.status]||''} ${fmt(cat.actual)}/mo
+      </span>` : '';
+    return `
+      <div class="py-2.5 border-b border-zinc-50 dark:border-zinc-800 last:border-0">
+        <div class="flex items-start justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            ${BUCKET_PILL[cat.bucket]||''}
+            <span class="font-medium text-xs text-zinc-700 dark:text-zinc-200">${cat.label}</span>
+            <span class="text-[10px] text-zinc-400 dark:text-zinc-500 hidden sm:inline">${cat.detail}</span>
+          </div>
+          <div class="text-right text-xs shrink-0">
+            <span class="font-semibold text-zinc-700 dark:text-zinc-200">${fmt(cat.monthly_min)} – ${fmt(cat.monthly_max)}/mo</span>
+            ${actualHtml}
+          </div>
+        </div>
+        <div class="mt-1.5 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-700">
+          <div class="h-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500 transition-all duration-500" style="width:${barPct}%"></div>
+        </div>
+        <p class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">${cat.note}</p>
+      </div>`;
+  }).join('');
+
+  div.innerHTML = `
+    ${sectionTitle('Recommended Budget Categories')}
+    <p class="text-xs text-zinc-400 dark:text-zinc-500 -mt-3 mb-1">
+      Gross <strong class="text-zinc-600 dark:text-zinc-300">${fmt(d.gross_monthly)}/mo</strong>
+      · Net take-home <strong class="text-zinc-600 dark:text-zinc-300">${fmt(d.net_monthly)}/mo</strong>
+    </p>
+    <p class="text-[10px] text-amber-600 dark:text-amber-500 mb-3">
+      Ranges are % of gross (industry standard). Your actual spending is measured against net take-home in the surplus line below.
+    </p>
+    ${d.dti != null ? `
+    <div class="flex justify-between items-center text-xs mb-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl px-3 py-2">
+      <span class="text-zinc-500 dark:text-zinc-400">Debt-to-Income Ratio <span class="text-zinc-400">(housing + debt)</span></span>
+      <span class="font-semibold ${d.dti > 0.43 ? 'text-red-500' : d.dti > 0.36 ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400'}">
+        ${(d.dti*100).toFixed(1)}% — ${d.dti > 0.43 ? 'High · limits mortgage eligibility' : d.dti > 0.36 ? 'Elevated · CFPB caution zone' : 'Healthy · within CFPB guideline'}
+      </span>
+    </div>` : ''}
+    ${rows}
+    ${d.surplus != null ? `
+    <div class="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-700 flex justify-between text-sm font-semibold">
+      <span class="text-zinc-600 dark:text-zinc-300">Monthly surplus / (deficit)</span>
+      <span class="${d.surplus >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}">${fmt(d.surplus)}/mo</span>
+    </div>` : ''}`;
+  return div;
+}
+
+// ── Framework card ────────────────────────────────────────────────────────────
+function computeActualSplit(d) {
+  const gmo = d.gross_monthly;
+  let n = 0, w = 0, s = 0;
+  d.categories.forEach(cat => {
+    if (cat.actual == null) return;
+    const pct = cat.actual / gmo;
+    if      (cat.bucket === 'needs')   n += pct;
+    else if (cat.bucket === 'wants')   w += pct;
+    else if (cat.bucket === 'savings') s += pct;
+  });
+  return (n + w + s) > 0 ? {needs: n, wants: w, savings: s} : null;
+}
+
+function renderFrameworkChart(d) {
+  const ctx = document.getElementById('fw-chart');
+  if (!ctx) return;
+  if (fwChart) { fwChart.destroy(); fwChart = null; }
+  const isDark    = document.documentElement.classList.contains('dark');
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)';
+  const textColor = isDark ? '#94a3b8' : '#64748b';
+  const actual    = computeActualSplit(d);
+  const labels    = [...d.frameworks.map(fw => fw.name), ...(actual ? ['Your Actual'] : [])];
+
+  const needsBg   = [...d.frameworks.map(() => 'rgba(96,165,250,0.80)'),  ...(actual ? ['rgba(59,130,246,1)']   : [])];
+  const wantsBg   = [...d.frameworks.map(() => 'rgba(251,191,36,0.80)'),  ...(actual ? ['rgba(245,158,11,1)']   : [])];
+  const savingsBg = [...d.frameworks.map(() => 'rgba(52,211,153,0.80)'),  ...(actual ? ['rgba(16,185,129,1)']   : [])];
+
+  fwChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {label: 'Needs',   data: [...d.frameworks.map(fw => fw.needs   * 100), ...(actual ? [actual.needs   * 100] : [])], backgroundColor: needsBg},
+        {label: 'Wants',   data: [...d.frameworks.map(fw => fw.wants   * 100), ...(actual ? [actual.wants   * 100] : [])], backgroundColor: wantsBg},
+        {label: 'Savings', data: [...d.frameworks.map(fw => fw.savings * 100), ...(actual ? [actual.savings * 100] : [])], backgroundColor: savingsBg, borderRadius: {topLeft: 4, topRight: 4}},
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: {labels: {color: textColor, font: {size: 11}, boxWidth: 12}},
+        tooltip: {callbacks: {label: c => ` ${c.dataset.label}: ${c.parsed.y.toFixed(1)}%`}},
+      },
+      scales: {
+        x: {stacked: true, ticks: {color: textColor, font: {size: 11}}, grid: {color: gridColor}},
+        y: {stacked: true, max: 105, ticks: {color: textColor, font: {size: 10}, callback: v => v + '%'}, grid: {color: gridColor}},
+      },
+    },
+  });
+}
+
+function renderFrameworkCard(d) {
+  const div  = card();
+  const rows = d.frameworks.map(fw => `
+    <tr class="border-b border-zinc-50 dark:border-zinc-800 last:border-0">
+      <td class="py-2 pr-4">
+        <p class="font-medium text-xs text-zinc-700 dark:text-zinc-200">${fw.name}</p>
+        <p class="text-[10px] text-zinc-400 dark:text-zinc-500">${fw.best_for}</p>
+      </td>
+      <td class="py-2 text-right pr-3 text-xs"><span class="font-semibold text-blue-600 dark:text-blue-400">${fmt(fw.needs_monthly)}</span> <span class="text-[10px] text-zinc-400">${fmtPct(fw.needs)}</span></td>
+      <td class="py-2 text-right pr-3 text-xs"><span class="font-semibold text-amber-600 dark:text-amber-400">${fmt(fw.wants_monthly)}</span> <span class="text-[10px] text-zinc-400">${fmtPct(fw.wants)}</span></td>
+      <td class="py-2 text-right text-xs"><span class="font-semibold text-green-600 dark:text-green-400">${fmt(fw.savings_monthly)}</span> <span class="text-[10px] text-zinc-400">${fmtPct(fw.savings)}</span></td>
+    </tr>`).join('');
+
+  div.innerHTML = `
+    ${sectionTitle('Budget Framework Comparison')}
+    <canvas id="fw-chart" height="185"></canvas>
+    <p class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-2 mb-4">
+      Stacked bars show Needs / Wants / Savings split. <strong class="text-zinc-500 dark:text-zinc-400">Your Actual</strong> bar appears when current spending is entered.
+    </p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead><tr class="text-[10px] font-semibold text-zinc-400 uppercase tracking-wide border-b border-zinc-100 dark:border-zinc-700">
+          <th class="pb-2 pr-4">Framework</th>
+          <th class="pb-2 pr-3 text-right text-blue-400">Needs</th>
+          <th class="pb-2 pr-3 text-right text-amber-400">Wants</th>
+          <th class="pb-2 text-right text-green-400">Savings</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  requestAnimationFrame(() => renderFrameworkChart(d));
+  return div;
+}
+
+// ── Milestone card ────────────────────────────────────────────────────────────
+function renderMilestoneCard(d) {
+  const div = card();
+  const items = d.milestones.map(m => `
+    <div class="flex items-start justify-between gap-4 py-2 border-b border-zinc-50 dark:border-zinc-800 last:border-0 ${m.past ? 'opacity-35' : ''}">
+      <div>
+        <p class="text-xs font-medium text-zinc-700 dark:text-zinc-200 ${m.past ? 'line-through' : ''}">${m.label}</p>
+        <p class="text-[10px] text-zinc-400 dark:text-zinc-500">${m.note}</p>
+      </div>
+      <p class="text-xs font-bold text-zinc-700 dark:text-zinc-200 shrink-0">${fmt(m.amount)}</p>
+    </div>`).join('');
+
+  div.innerHTML = `
+    ${sectionTitle('Financial Milestones')}
+    <div>${items}</div>
+    <p class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-3">
+      Sources: CFPB, Fidelity, Vanguard, NerdWallet, Dave Ramsey, Elizabeth Warren (50/30/20)
+    </p>`;
+  return div;
+}
+
+// ── Download report ───────────────────────────────────────────────────────────
+function downloadReport() {
+  if (!lastResult) return;
+  const d = lastResult;
+  const t = d.taxes;
+
+  const inputs = (() => {
+    const gross   = document.getElementById('gross').value;
+    const state   = document.getElementById('state');
+    const filing  = document.getElementById('filing');
+    const age     = document.getElementById('age').value;
+    const ptx     = document.getElementById('pretax').value;
+    const chk     = document.getElementById('bal-checking').value;
+    const sav     = document.getElementById('bal-savings').value;
+    const ret     = document.getElementById('bal-retirement').value;
+    const filingLabel = filing.options[filing.selectedIndex]?.text || '';
+    const stateName   = state.options[state.selectedIndex]?.text || '';
+    let rows = `
+      <tr><td>Gross Annual Income</td><td><strong>${fmt(parseFloat(gross))}</strong></td></tr>
+      <tr><td>State</td><td>${stateName}</td></tr>
+      <tr><td>Filing Status</td><td>${filingLabel}</td></tr>`;
+    if (age) rows += `<tr><td>Age</td><td>${age}</td></tr>`;
+    if (ptx) rows += `<tr><td>Pre-tax Deductions (401k/HSA/FSA)</td><td>${fmt(parseFloat(ptx))}/yr</td></tr>`;
+    if (chk) rows += `<tr><td>Checking Balance</td><td>${fmt(parseFloat(chk))}</td></tr>`;
+    if (sav) rows += `<tr><td>Savings / HYSA</td><td>${fmt(parseFloat(sav))}</td></tr>`;
+    if (ret) rows += `<tr><td>Retirement Balance</td><td>${fmt(parseFloat(ret))}</td></tr>`;
+    return rows;
+  })();
+
+  const insightRows = (d.insights || []).map(ins => {
+    const tierColor = {critical:'#dc2626', warning:'#d97706', good:'#16a34a'}[ins.tier] || '#374151';
+    const tierLabel = {critical:'Critical', warning:'Warning', good:'On Track'}[ins.tier] || ins.tier;
+    return `<tr>
+      <td style="padding:10px 12px;border-left:3px solid ${tierColor};background:#f9fafb;border-radius:4px">
+        <div style="font-size:11px;color:${tierColor};font-weight:600;text-transform:uppercase">${tierLabel}</div>
+        <div style="font-weight:600;margin:2px 0">${ins.icon} ${ins.title}</div>
+        <div style="color:#374151;margin:2px 0;font-size:13px">${ins.body}</div>
+        <div style="color:#6b7280;font-size:12px;margin-top:4px"><strong>Action:</strong> ${ins.action}</div>
+      </td>
+    </tr><tr><td style="height:6px"></td></tr>`;
+  }).join('');
+
+  const catRows = d.categories.map(cat => {
+    const sc = cat.status;
+    const c  = {ok:'#16a34a', over:'#dc2626', under:'#2563eb'}[sc] || '#374151';
+    const actual = cat.actual != null
+      ? ` <span style="color:${c};font-size:11px">(actual: ${fmt(cat.actual)}/mo)</span>` : '';
+    return `<tr style="border-bottom:1px solid #f1f5f9">
+      <td style="padding:6px 8px;font-size:13px;color:#374151">${cat.label}</td>
+      <td style="padding:6px 8px;font-size:13px;text-align:right;white-space:nowrap">
+        ${fmt(cat.monthly_min)} – ${fmt(cat.monthly_max)}/mo${actual}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const surplusRow = d.surplus != null ? `
+    <tr style="background:#f8fafc">
+      <td style="padding:8px;font-weight:700">Monthly Surplus / (Deficit)</td>
+      <td style="padding:8px;font-weight:700;color:${d.surplus>=0?'#16a34a':'#dc2626'};text-align:right">${fmt(d.surplus)}/mo</td>
+    </tr>` : '';
+
+  const fwRows = d.frameworks.map(fw => `
+    <tr style="border-bottom:1px solid #f1f5f9">
+      <td style="padding:7px 8px;font-size:13px;font-weight:600">${fw.name}<br><span style="font-size:11px;color:#9ca3af;font-weight:normal">${fw.best_for}</span></td>
+      <td style="padding:7px 8px;font-size:13px;text-align:right;color:#2563eb">${fmt(fw.needs_monthly)}</td>
+      <td style="padding:7px 8px;font-size:13px;text-align:right;color:#d97706">${fmt(fw.wants_monthly)}</td>
+      <td style="padding:7px 8px;font-size:13px;text-align:right;color:#16a34a">${fmt(fw.savings_monthly)}</td>
+    </tr>`).join('');
+
+  const msRows = d.milestones
+    .filter(m => !m.past)
+    .map(m => `
+      <tr style="border-bottom:1px solid #f1f5f9">
+        <td style="padding:6px 8px;font-size:13px;color:#374151">${m.label}</td>
+        <td style="padding:6px 8px;font-size:13px;font-weight:600;text-align:right;color:#18181b">${fmt(m.amount)}</td>
+        <td style="padding:6px 8px;font-size:12px;color:#9ca3af">${m.note}</td>
+      </tr>`).join('');
+
+  let healthHtml = '';
+  if (d.health) {
+    const h = d.health;
+    healthHtml = `
+    <h2 style="font-size:17px;font-weight:700;color:#111827;margin:28px 0 10px">Account Health Check</h2>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f8fafc;border-radius:10px;overflow:hidden">
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 8px;font-size:13px;color:#374151">Checking Balance</td><td style="padding:7px 8px;font-size:13px;font-weight:600;text-align:right">${fmt(h.checking)}</td></tr>
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 8px;font-size:13px;color:#374151">Savings / HYSA</td><td style="padding:7px 8px;font-size:13px;font-weight:600;text-align:right">${fmt(h.savings)}</td></tr>
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 8px;font-size:13px;color:#374151">Retirement Balance</td><td style="padding:7px 8px;font-size:13px;font-weight:600;text-align:right">${fmt(h.retirement_balance)}</td></tr>
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 8px;font-size:13px;color:#374151">Liquid Emergency Coverage</td><td style="padding:7px 8px;font-size:13px;font-weight:600;text-align:right">${h.months_liquid.toFixed(1)} months</td></tr>
+      <tr><td style="padding:7px 8px;font-size:13px;color:#374151">Est. Net Worth (excl. debt)</td><td style="padding:7px 8px;font-size:13px;font-weight:600;text-align:right">${fmt(h.net_worth_estimate)}</td></tr>
+    </table>`;
+  }
+
+  const now = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Budget Report — ${now}</title>
+<style>
+  body{margin:0;padding:0;background:#f1f5f9;font-family:system-ui,-apple-system,sans-serif}
+  table{border-collapse:collapse}
+  h2{font-size:17px;font-weight:700;color:#111827;margin:28px 0 10px}
+  @media print{body{background:#fff}.no-print{display:none}}
+</style></head>
+<body>
+<div style="max-width:680px;margin:24px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+
+  <div style="background:linear-gradient(135deg,#18181b,#3f3f46);padding:28px 32px;color:#fff">
+    <div style="font-size:22px;font-weight:800">💰 Budget Analysis Report</div>
+    <div style="font-size:13px;opacity:.8;margin-top:4px">Generated ${now} · ${t.state.name || ''} · ${t.tax_year} rates</div>
+  </div>
+
+  <div style="padding:28px 32px">
+
+    <h2>Your Inputs</h2>
+    <table width="100%" style="background:#f8fafc;border-radius:10px;overflow:hidden">
+      ${inputs}
+    </table>
+
+    <h2 style="margin-top:28px">Income &amp; Tax Summary</h2>
+    <table width="100%" style="background:#f8fafc;border-radius:10px;overflow:hidden">
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px;font-weight:600">Gross Annual Income</td><td style="padding:8px;font-weight:700;text-align:right">${fmt(t.gross)}</td></tr>
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px;font-size:13px;color:#6b7280">Federal Income Tax</td><td style="padding:8px;font-size:13px;color:#dc2626;text-align:right">${fmt(t.federal.tax)}</td></tr>
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px;font-size:13px;color:#6b7280">FICA (SS + Medicare)</td><td style="padding:8px;font-size:13px;color:#f97316;text-align:right">${fmt(t.fica.total)}</td></tr>
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px;font-size:13px;color:#6b7280">State Income Tax (${t.state.name || ''})</td><td style="padding:8px;font-size:13px;color:#a855f7;text-align:right">${fmt(t.state.tax)}</td></tr>
+      <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:8px;font-size:13px;color:#6b7280">Total Taxes · Effective Rate</td><td style="padding:8px;font-size:13px;font-weight:600;color:#dc2626;text-align:right">${fmt(t.total_tax)} · ${fmtRate(t.effective_rate)}</td></tr>
+      <tr><td style="padding:10px 8px;font-size:15px;font-weight:700">Net Annual Take-Home</td><td style="padding:10px 8px;font-size:15px;font-weight:700;color:#16a34a;text-align:right">${fmt(t.net_annual)} · ${fmt(t.net_monthly)}/mo</td></tr>
+    </table>
+
+    ${healthHtml}
+
+    ${d.insights?.length ? `
+    <h2>Actionable Insights (${d.insights.length})</h2>
+    <table width="100%" cellpadding="0" cellspacing="0">${insightRows}</table>` : ''}
+
+    <h2>Recommended Budget Ranges</h2>
+    <table width="100%" style="background:#f8fafc;border-radius:10px;overflow:hidden">
+      <tr style="background:#e2e8f0"><th style="padding:8px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase">Category</th><th style="padding:8px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase">Recommended Range</th></tr>
+      ${catRows}
+      ${surplusRow}
+    </table>
+
+    <h2>Budget Framework Comparison</h2>
+    <table width="100%" style="background:#f8fafc;border-radius:10px;overflow:hidden">
+      <tr style="background:#e2e8f0">
+        <th style="padding:8px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase">Framework</th>
+        <th style="padding:8px;text-align:right;font-size:11px;color:#2563eb;text-transform:uppercase">Needs</th>
+        <th style="padding:8px;text-align:right;font-size:11px;color:#d97706;text-transform:uppercase">Wants</th>
+        <th style="padding:8px;text-align:right;font-size:11px;color:#16a34a;text-transform:uppercase">Savings</th>
+      </tr>
+      ${fwRows}
+    </table>
+
+    <h2>Financial Milestones</h2>
+    <table width="100%" style="background:#f8fafc;border-radius:10px;overflow:hidden">
+      <tr style="background:#e2e8f0">
+        <th style="padding:8px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase">Milestone</th>
+        <th style="padding:8px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase">Target Amount</th>
+        <th style="padding:8px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase">Note</th>
+      </tr>
+      ${msRows}
+    </table>
+
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:11px;color:#9ca3af">
+      Tax rates: IRS Publication 15-T &amp; state revenue agencies. Local taxes not included.<br>
+      Sources: CFPB, Fidelity, Vanguard, NerdWallet, Dave Ramsey, Elizabeth Warren (50/30/20).<br>
+      This report is for informational purposes only — consult a CFP for personalized advice.
+    </div>
+  </div>
+</div>
+</body></html>`;
+
+  const blob = new Blob([html], {type: 'text/html'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `budget-report-${new Date().toISOString().slice(0,10)}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Form persistence ──────────────────────────────────────────────────────────
+const PERSIST_KEY = 'budget_form_v2';
+const PERSIST_IDS = ['gross', 'state', 'age', 'filing', 'pretax', 'bal-checking', 'bal-savings', 'bal-retirement'];
+
+function saveFormState() {
+  const data = {};
+  PERSIST_IDS.forEach(id => { data[id] = document.getElementById(id)?.value || ''; });
+  data.actuals = {};
+  document.querySelectorAll('.actual-input').forEach(inp => {
+    if (inp.value) data.actuals[inp.dataset.key] = inp.value;
+  });
+  localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+}
+
+function restoreFormState() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem(PERSIST_KEY)); } catch(_) { return; }
+  if (!data) return;
+
+  PERSIST_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && data[id]) el.value = data[id];
+  });
+
+  const hasBalances = ['bal-checking', 'bal-savings', 'bal-retirement'].some(id => data[id]);
+  if (hasBalances) document.getElementById('details-balances').open = true;
+
+  if (data['pretax']) document.getElementById('details-pretax').open = true;
+
+  if (data.actuals && Object.keys(data.actuals).length) {
+    document.querySelectorAll('.actual-input').forEach(inp => {
+      if (data.actuals[inp.dataset.key]) inp.value = data.actuals[inp.dataset.key];
+    });
+    document.getElementById('details-actuals').open = true;
+  }
+}
+
+function resetForm() {
+  // Clear all tracked inputs
+  PERSIST_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('filing').value = 'single';
+  document.querySelectorAll('.actual-input').forEach(inp => { inp.value = ''; });
+
+  // Collapse optional panels
+  ['details-pretax', 'details-balances', 'details-actuals'].forEach(id => {
+    document.getElementById(id).open = false;
+  });
+
+  // Reset running total display
+  const tot = document.getElementById('actuals-total');
+  if (tot) { tot.textContent = '$0'; tot.className = 'font-semibold text-zinc-500 dark:text-zinc-400'; }
+
+  // Clear persisted state
+  localStorage.removeItem(PERSIST_KEY);
+
+  // Hide results
+  lastResult = null;
+  if (taxChart) { taxChart.destroy(); taxChart = null; }
+  document.getElementById('result-content').classList.add('hidden');
+  document.getElementById('empty-state').classList.remove('hidden');
+  document.getElementById('header-year-badge').classList.add('hidden');
+  document.getElementById('stale-banner').classList.add('hidden');
+  document.getElementById('form-error').classList.add('hidden');
+  document.getElementById('download-btn').classList.add('hidden');
+  document.getElementById('download-btn').classList.remove('flex');
+  document.getElementById('print-btn').classList.add('hidden');
+}
+
+// Auto-save on any sidebar input/select change
+document.querySelector('aside').addEventListener('input',  saveFormState);
+document.querySelector('aside').addEventListener('change', saveFormState);
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadStates();
+</script>
+</body>
+</html>
